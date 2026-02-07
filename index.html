@@ -890,138 +890,141 @@
     // =========================
     // ✅ MP：永远保留你点到的物体（自动判断需不需要反转）
     // =========================
-    async function handleMediaPipeTap(e){
-      e.preventDefault?.();
-      if (!interactiveSegmenter) { showHint("模型未就绪", 800); return; }
-      if (isProcessing) return;
+   async function handleMediaPipeTap(e){
+  e.preventDefault?.();
+  if (!interactiveSegmenter) { showHint("模型未就绪", 800); return; }
+  if (isProcessing) return;
 
-      const rect = video.getBoundingClientRect();
-      const { cx: clientX, cy: clientY } = getClientXY(e);
-      if (clientX == null || clientY == null) return;
+  const vRect = video.getBoundingClientRect();
+  const { cx: clientX, cy: clientY } = getClientXY(e);
+  if (clientX == null || clientY == null) return;
 
-      console.log("tap event", e.type, "client", clientX, clientY);
-      console.log("video ready", video.videoWidth, video.videoHeight, "seg", !!interactiveSegmenter);
+  console.log("tap event", e.type, "client", clientX, clientY);
+  console.log("video ready", video.videoWidth, video.videoHeight, "seg", !!interactiveSegmenter);
 
-      if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
+  // 点击必须落在视频可视区域内
+  if (clientX < vRect.left || clientX > vRect.right || clientY < vRect.top || clientY > vRect.bottom) return;
 
-      isProcessing = true;
-      try{
-        const relativeX = (clientX - rect.left) / rect.width;
-        const relativeY = (clientY - rect.top) / rect.height;
-        console.log("relative", relativeX, relativeY);
+  isProcessing = true;
+  try{
+    // 点击点在 video DOM（object-fit:cover 的可视区域）内的归一化坐标
+    const relativeX = (clientX - vRect.left) / vRect.width;
+    const relativeY = (clientY - vRect.top) / vRect.height;
+    console.log("relative", relativeX, relativeY);
 
-        const result = await new Promise(resolve => {
-          interactiveSegmenter.segment(
-            video,
-            { keypoint: { x: relativeX, y: relativeY } },
-            (r)=>resolve(r)
-          );
-        });
+    const result = await new Promise(resolve => {
+      interactiveSegmenter.segment(
+        video,
+        { keypoint: { x: relativeX, y: relativeY } },
+        (r)=>resolve(r)
+      );
+    });
 
-        if (!result?.categoryMask){
-          showHint("没有得到 mask（换个点试试）", 900);
-          isProcessing = false;
-          return;
-        }
-
-        const w = video.videoWidth;
-        const h = video.videoHeight;
-
-        const full = document.createElement("canvas");
-        full.width = w;
-        full.height = h;
-        const fctx = full.getContext("2d");
-        fctx.drawImage(video, 0,0,w,h);
-
-        const imgData = fctx.getImageData(0,0,w,h);
-        const pixels = imgData.data;
-
-        // 1) 读 mask：优先 Uint8（更像类别），否则 Float32（0~1）
-        let maskData = null;
-        let isUintMask = false;
-        try{
-          if (result.categoryMask.getAsUint8Array){
-            maskData = result.categoryMask.getAsUint8Array();
-            isUintMask = true;
-          } else {
-            maskData = result.categoryMask.getAsFloat32Array();
-          }
-        } catch {
-          maskData = result.categoryMask.getAsFloat32Array();
-        }
-
-        // 2) 用“点击点”判断是否需要反转
-        const TH = 0.4;
-        const mx = Math.max(0, Math.min(w - 1, Math.floor(relativeX * w)));
-        const my = Math.max(0, Math.min(h - 1, Math.floor(relativeY * h)));
-        const mi = my * w + mx;
-
-        const clickedVal = maskData[mi];
-        const clickedIsFG_byDefault = isUintMask ? (clickedVal > 0) : (clickedVal >= TH);
-
-        // 如果点击点会被删掉，就反转（确保保留点击物体）
-        const invert = !clickedIsFG_by_default(clickedIsFG_by_default);
-
-        function clickedIsFG_by_default(v){ return v; } // 只是为了让下面一行更不容易被你误改
-
-        // 3) 应用 mask：保留“点击物体”那一侧
-        for (let i = 0; i < w * h; i++){
-          const v = maskData[i];
-          const isFG = isUintMask ? (v > 0) : (v >= TH);
-          const keep = invert ? !isFG : isFG;
-          if (!keep) pixels[i*4 + 3] = 0;
-        }
-        fctx.putImageData(imgData, 0,0);
-
-        const trimmed = trimCanvas(full);
-        if (!trimmed){
-          showHint("抠图为空（换个点试试）", 900);
-          isProcessing = false;
-          return;
-        }
-
-        // map video pixels -> stage css px (object-fit cover)
-        const sw = stage.clientWidth, sh = stage.clientHeight;
-        const videoAspect = w / h;
-        const stageAspect = sw / sh;
-
-        let drawW, drawH, offsetX, offsetY;
-        if (stageAspect > videoAspect){
-          drawW = sw;
-          drawH = sw / videoAspect;
-          offsetX = 0;
-          offsetY = (sh - drawH)/2;
-        } else {
-          drawH = sh;
-          drawW = sh * videoAspect;
-          offsetY = 0;
-          offsetX = (sw - drawW)/2;
-        }
-
-        let nx = Number(trimmed.dataset.originX) / w;
-        const ny = Number(trimmed.dataset.originY) / h;
-        const nw = trimmed.width / w;
-        const nh = trimmed.height / h;
-
-        if (facingMode === "user"){
-          nx = 1 - nx - nw;
-        }
-
-        const cssRect = {
-          x: offsetX + nx * drawW,
-          y: offsetY + ny * drawH,
-          w: nw * drawW,
-          h: nh * drawH
-        };
-
-        addStickerFromCanvas(trimmed, cssRect);
-        showHint("MP 抠图完成：点画面继续抠；贴纸可拖动/Save/Edit", 1300);
-      } catch(err){
-        console.error(err);
-        showHint("分割出错（可能网络/模型/权限）", 1200);
-      }
+    if (!result?.categoryMask){
+      showHint("没有得到 mask（换个点试试）", 900);
       isProcessing = false;
+      return;
     }
+
+    // ✅ 使用视频“真实像素尺寸”，不是屏幕尺寸
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+
+    // 把当前帧画到 fullCanvas 上（与 mask 同分辨率）
+    const fullCanvas = document.createElement("canvas");
+    fullCanvas.width = vw;
+    fullCanvas.height = vh;
+    const fctx = fullCanvas.getContext("2d", { willReadFrequently: true });
+    fctx.drawImage(video, 0, 0, vw, vh);
+
+    // 读像素
+    const frameData = fctx.getImageData(0, 0, vw, vh);
+    const rgba = frameData.data;
+
+    // 读 mask
+    const maskData = result.categoryMask.getAsFloat32Array();
+
+    // ✅ 判断 mask 类型：有些设备给 0/1（像 uint8），有些给 0~1（float）
+    let isUintMask = true;
+    for (let k = 0; k < 40 && k < maskData.length; k++){
+      const v = maskData[k];
+      if (v !== 0 && v !== 1) { isUintMask = false; break; }
+    }
+
+    const TH = 0.4;
+
+    const isMasked = (idx) => {
+      const v = maskData[idx];
+      return isUintMask ? (v > 0) : (v >= TH);
+    };
+
+    // ✅ 用“点击点”决定保留哪一类（前景/背景）
+    const mx = Math.max(0, Math.min(vw - 1, Math.floor(relativeX * vw)));
+    const my = Math.max(0, Math.min(vh - 1, Math.floor(relativeY * vh)));
+    const mi = my * vw + mx;
+
+    const clickedClass = isMasked(mi);
+    console.log("mask clicked:", maskData[mi], "isUint:", isUintMask, "clickedClass:", clickedClass);
+
+    // 只保留跟 clickedClass 相同的像素
+    for (let i = 0; i < vw * vh; i++){
+      if (isMasked(i) !== clickedClass) rgba[i*4 + 3] = 0;
+    }
+    fctx.putImageData(frameData, 0, 0);
+
+    // trim 到非透明边界，得到“物体本体”canvas
+    const trimmed = trimCanvas(fullCanvas);
+    if (!trimmed){
+      showHint("抠图为空（换个点试试）", 900);
+      isProcessing = false;
+      return;
+    }
+
+    // ✅ 把“视频像素坐标”映射回舞台（object-fit:cover）
+    const sw = stage.clientWidth, sh = stage.clientHeight;
+    const videoAspect = vw / vh;
+    const stageAspect = sw / sh;
+
+    let drawW, drawH, offsetX, offsetY;
+    if (stageAspect > videoAspect){
+      drawW = sw;
+      drawH = sw / videoAspect;
+      offsetX = 0;
+      offsetY = (sh - drawH) / 2;
+    } else {
+      drawH = sh;
+      drawW = sh * videoAspect;
+      offsetY = 0;
+      offsetX = (sw - drawW) / 2;
+    }
+
+    let nx = Number(trimmed.dataset.originX) / vw;
+    const ny = Number(trimmed.dataset.originY) / vh;
+    const nw = trimmed.width / vw;
+    const nh = trimmed.height / vh;
+
+    // 前置镜像要反过来
+    if (facingMode === "user"){
+      nx = 1 - nx - nw;
+    }
+
+    const cssRect = {
+      x: offsetX + nx * drawW,
+      y: offsetY + ny * drawH,
+      w: nw * drawW,
+      h: nh * drawH
+    };
+
+    addStickerFromCanvas(trimmed, cssRect);
+    showHint("MP 抠图完成：点画面继续抠；贴纸可拖动/Save/Edit", 1300);
+
+  } catch(err){
+    console.error(err);
+    showHint("分割出错（可能网络/模型/权限）", 1200);
+  }
+  isProcessing = false;
+}
+
 
     function trimCanvas(c){
       const ctx = c.getContext("2d");
