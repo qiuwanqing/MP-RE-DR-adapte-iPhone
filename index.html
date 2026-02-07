@@ -4,6 +4,11 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
   <title>MP+RE+DR-2/iphone</title>
+  <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
+<script>
+  var vConsole = new VConsole();
+</script>
+
   <style>
     :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
     body { margin:0; background:#0b0c10; color:#e8e8e8; overflow:hidden; }
@@ -390,11 +395,18 @@
       const r = stage.getBoundingClientRect();
       return { x: clientX - r.left, y: clientY - r.top, W: r.width, H: r.height };
     }
-    function getClientXY(e){
-      const cx = e.clientX ?? e.touches?.[0]?.clientX;
-      const cy = e.clientY ?? e.touches?.[0]?.clientY;
-      return { cx, cy };
-    }
+function getClientXY(e){
+  // 统一兼容：touch / pointer / mouse
+  // iOS 上 pointer 事件不一定带 touches，所以 changedTouches 要优先
+  if (e.changedTouches && e.changedTouches.length) {
+    return { cx: e.changedTouches[0].clientX, cy: e.changedTouches[0].clientY };
+  }
+  if (e.touches && e.touches.length) {
+    return { cx: e.touches[0].clientX, cy: e.touches[0].clientY };
+  }
+  return { cx: e.clientX, cy: e.clientY };
+}
+
 
     /* =========================
        Camera
@@ -458,14 +470,9 @@
           });
         }
 
-        try{
-          interactiveSegmenter = await create("GPU");
-          loader.innerText = "模型就绪（GPU），请开启相机";
-        } catch(e){
-          console.warn("GPU failed, fallback CPU:", e);
-          interactiveSegmenter = await create("CPU");
-          loader.innerText = "模型就绪（CPU），请开启相机";
-        }
+interactiveSegmenter = await create("CPU");
+loader.innerText = "模型就绪（CPU），请开启相机";
+
       } catch(err){
         console.error(err);
         loader.innerText = "模型加载失败: " + err.message;
@@ -834,8 +841,9 @@
 
       if (!video.srcObject) { showHint("先点 Start Camera", 900); return; }
 
-      const isOnStageSurface = (e.target === stage || e.target === video || e.target === roiBox || e.target === drawLayer);
-      if (!isOnStageSurface) return;
+// 只要事件发生在 stage 区域就允许
+if (!stage.contains(e.target)) return;
+
 
       // If editing: tap empty exits editing (keep selected)
       if (editbar.style.display === "flex") {
@@ -979,12 +987,16 @@
        MediaPipe tap -> segment -> trimmed sticker
     ========================= */
     async function handleMediaPipeTap(e){
+      e.preventDefault?.(); 
       if (!interactiveSegmenter) { showHint("模型未就绪", 800); return; }
       if (isProcessing) return;
 
       const rect = video.getBoundingClientRect();
       const { cx: clientX, cy: clientY } = getClientXY(e);
       if (clientX == null || clientY == null) return;
+
+      console.log("tap event", e.type, "client", clientX, clientY);
+  console.log("video ready", video.videoWidth, video.videoHeight, "seg", !!interactiveSegmenter);
 
       if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
 
@@ -993,6 +1005,7 @@
         const relativeX = (clientX - rect.left) / rect.width;
         const relativeY = (clientY - rect.top) / rect.height;
 
+        console.log("relative", relativeX, relativeY);
         const result = await new Promise(resolve => {
           interactiveSegmenter.segment(
             video,
