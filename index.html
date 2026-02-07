@@ -4,17 +4,15 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
   <title>MP+RE+DR-2/iphone</title>
+
   <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
-<script>
-  var vConsole = new VConsole();
-</script>
+  <script>var vConsole = new VConsole();</script>
 
   <style>
     :root { font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; }
     body { margin:0; background:#0b0c10; color:#e8e8e8; overflow:hidden; }
     button { font: inherit; }
 
-    /* 顶栏 */
     .topbar{
       position: absolute; top:0; left:0; right:0;
       z-index: 40;
@@ -39,19 +37,14 @@
       border-color: rgba(255,255,255,.75);
       background: rgba(255,255,255,.16);
     }
-    .topbar .danger{
-      border-color: rgba(255,120,120,.55);
-    }
-    .topbar .primary{
-      border-color: rgba(160,210,255,.60);
-    }
+    .topbar .danger{ border-color: rgba(255,120,120,.55); }
+    .topbar .primary{ border-color: rgba(160,210,255,.60); }
     .topbar button.disabled{
       opacity:.45;
       pointer-events:none;
       filter:saturate(.7);
     }
 
-    /* 舞台 */
     #stage{
       position: relative;
       width:100vw;
@@ -69,7 +62,6 @@
       z-index:1;
     }
 
-    /* loader/hint */
     #loader{
       position:absolute; left:50%; top:50%;
       transform: translate(-50%, -50%);
@@ -107,7 +99,6 @@
     }
     #hint.show{ opacity:1; }
 
-    /* ROI 可视化框 */
     #roiBox{
       position:absolute;
       border:1px solid rgba(255,255,255,.85);
@@ -118,14 +109,12 @@
       z-index: 9;
     }
 
-    /* 绘制层：显示path */
     #drawLayer{
       position:absolute; inset:0;
       z-index: 8;
       pointer-events:none;
     }
 
-    /* 贴纸 / 冻结窗（统一用 canvas） */
     .sticker{
       position:absolute;
       left:0; top:0;
@@ -151,7 +140,6 @@
       to   { transform: scale(1); opacity:1; }
     }
 
-    /* 编辑条（深度编辑时出现） */
     #editbar{
       position:absolute; left:0; right:0; bottom:0;
       z-index: 50;
@@ -182,7 +170,6 @@
     }
     input[type="range"]{ width:140px; }
 
-    /* Library 面板 */
     #libPanel{
       position:absolute;
       right:12px; top:62px;
@@ -281,9 +268,6 @@
   <script type="module">
     import { InteractiveSegmenter, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.0/vision_bundle.js";
 
-    /* =========================
-       Elements
-    ========================= */
     const stage = document.getElementById("stage");
     const video = document.getElementById("video");
     const roiBox = document.getElementById("roiBox");
@@ -302,9 +286,6 @@
     const btnSave = document.getElementById("btnSave");
     const btnEdit = document.getElementById("btnEdit");
 
-    /* =========================
-       UI helpers
-    ========================= */
     const showHint = (text, ms=900) => {
       hint.textContent = text;
       hint.classList.add("show");
@@ -317,34 +298,25 @@
       btnEdit.classList.toggle("disabled", !enabled);
     }
 
-    /* =========================
-       Global state
-    ========================= */
     let stream = null;
-    let facingMode = "environment"; // environment | user
+    let facingMode = "environment";
 
-    let captureMode = "mp"; // mp | rect | draw
+    let captureMode = "mp";
     let pointerDown = false;
     let startPt = null;
-    let roi = null;      // {x,y,w,h} stage css px
-    let path = [];       // [{x,y},...]
+    let roi = null;
+    let path = [];
 
-    // stickers
-    let stickers = [];   // { el, x,y,w,h, scale, rot }
+    let stickers = [];
     let selected = null;
 
-    // Editing
-    let editMode = "stretch"; // only stretch now
-    let paintUndoStack = []; // imageData stack for selected canvas (liquify)
-
-    // Object-level undo (remove last added sticker)
+    let editMode = "stretch";
+    let paintUndoStack = [];
     let objUndoStack = [];
 
-    // MediaPipe
     let interactiveSegmenter = null;
     let isProcessing = false;
 
-    // Two-finger gesture for transform selected
     let gesture = {
       active:false,
       startDist:0,
@@ -353,12 +325,8 @@
       baseRot:0
     };
 
-    // Library
     const LIB_KEY = "capture_library_v2";
 
-    /* =========================
-       Resize draw layer
-    ========================= */
     function resizeDrawLayer(){
       const r = stage.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
@@ -386,31 +354,23 @@
       drawCtx.stroke();
     }
 
-    /* =========================
-       Utility: clamp + local point
-    ========================= */
     function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
 
     function localPointFromClient(clientX, clientY){
       const r = stage.getBoundingClientRect();
       return { x: clientX - r.left, y: clientY - r.top, W: r.width, H: r.height };
     }
-function getClientXY(e){
-  // 统一兼容：touch / pointer / mouse
-  // iOS 上 pointer 事件不一定带 touches，所以 changedTouches 要优先
-  if (e.changedTouches && e.changedTouches.length) {
-    return { cx: e.changedTouches[0].clientX, cy: e.changedTouches[0].clientY };
-  }
-  if (e.touches && e.touches.length) {
-    return { cx: e.touches[0].clientX, cy: e.touches[0].clientY };
-  }
-  return { cx: e.clientX, cy: e.clientY };
-}
 
+    function getClientXY(e){
+      if (e.changedTouches && e.changedTouches.length) {
+        return { cx: e.changedTouches[0].clientX, cy: e.changedTouches[0].clientY };
+      }
+      if (e.touches && e.touches.length) {
+        return { cx: e.touches[0].clientX, cy: e.touches[0].clientY };
+      }
+      return { cx: e.clientX, cy: e.clientY };
+    }
 
-    /* =========================
-       Camera
-    ========================= */
     async function startCamera(){
       if (!navigator.mediaDevices?.getUserMedia) {
         alert("当前环境不支持摄像头。");
@@ -424,11 +384,7 @@ function getClientXY(e){
 
       try{
         stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode,
-            width:  { ideal: 720 },
-            height: { ideal: 1280 }
-          },
+          video: { facingMode, width:{ideal:720}, height:{ideal:1280} },
           audio: false
         });
 
@@ -440,16 +396,13 @@ function getClientXY(e){
         loader.style.display = "none";
         resizeDrawLayer();
 
-        showHint("轻点贴纸=选中；按住拖动=移动；双指=旋转缩放；Edit=深度编辑", 1800);
+        showHint("MP：点画面=抠图；贴纸：点=选中，拖=移动；双指=旋转缩放", 1800);
       } catch(e){
         console.error(e);
         alert("无法打开相机：请检查权限；iOS 通常需要 https。");
       }
     }
 
-    /* =========================
-       MediaPipe init (GPU -> CPU fallback)
-    ========================= */
     async function initModel(){
       try{
         loader.innerText = "正在下载 WASM…";
@@ -470,18 +423,14 @@ function getClientXY(e){
           });
         }
 
-interactiveSegmenter = await create("CPU");
-loader.innerText = "模型就绪（CPU），请开启相机";
-
+        interactiveSegmenter = await create("CPU");
+        loader.innerText = "模型就绪（CPU），请开启相机";
       } catch(err){
         console.error(err);
         loader.innerText = "模型加载失败: " + err.message;
       }
     }
 
-    /* =========================
-       Capture mode UI
-    ========================= */
     const btnModeMP   = document.getElementById("btnModeMP");
     const btnModeRect = document.getElementById("btnModeRect");
     const btnModeDraw = document.getElementById("btnModeDraw");
@@ -500,9 +449,6 @@ loader.innerText = "模型就绪（CPU），请开启相机";
     btnModeRect.onclick = () => setCaptureMode("rect");
     btnModeDraw.onclick = () => setCaptureMode("draw");
 
-    /* =========================
-       Selection + enable actions
-    ========================= */
     function deselect(){
       if (selected?.el) selected.el.classList.remove("selected");
       selected = null;
@@ -517,16 +463,13 @@ loader.innerText = "模型就绪（CPU），请开启相机";
       st.el.classList.add("selected");
       paintUndoStack = [];
       setActionEnabled(true);
-      showHint("已选中：可拖动移动 / Save / 双指旋转缩放 / Edit 深度编辑", 1200);
+      showHint("已选中：拖动移动 / Save / 双指旋转缩放 / Edit 深度编辑", 1200);
     }
 
     function applyTransform(st){
       st.el.style.transform = `translateZ(0) rotate(${st.rot}rad) scale(${st.scale})`;
     }
 
-    /* =========================
-       ROI box
-    ========================= */
     function showROI(rect){
       roiBox.style.display = "block";
       roiBox.style.left = rect.x + "px";
@@ -536,10 +479,6 @@ loader.innerText = "模型就绪（CPU），请开启相机";
     }
     function hideROI(){ roiBox.style.display = "none"; }
 
-    /* =========================
-       object-fit: cover mapping
-       stage CSS rect -> video pixel crop
-    ========================= */
     function cssRectToVideoCrop(cssRect){
       const vw = video.videoWidth, vh = video.videoHeight;
       if (!vw || !vh) return null;
@@ -583,9 +522,6 @@ loader.innerText = "模型就绪（CPU），请开启相机";
       return { sx, sy, sw: swp, sh: shp };
     }
 
-    /* =========================
-       Add sticker from canvas
-    ========================= */
     function addStickerFromCanvas(srcCanvas, cssRect){
       const dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 3));
 
@@ -605,13 +541,7 @@ loader.innerText = "模型就绪（CPU），请开启相机";
 
       stage.appendChild(stCanvas);
 
-      const st = {
-        el: stCanvas,
-        x: cssRect.x, y: cssRect.y,
-        w: cssRect.w, h: cssRect.h,
-        scale: 1,
-        rot: 0
-      };
+      const st = { el: stCanvas, x: cssRect.x, y: cssRect.y, w: cssRect.w, h: cssRect.h, scale: 1, rot: 0 };
       stickers.push(st);
       objUndoStack.push(st);
 
@@ -619,9 +549,6 @@ loader.innerText = "模型就绪（CPU），请开启相机";
       selectSticker(st);
     }
 
-    /* =========================
-       Hit testing / local points
-    ========================= */
     function alphaHitTest(canvasEl, clientX, clientY){
       const r = canvasEl.getBoundingClientRect();
       const d = canvasEl.width / r.width;
@@ -640,12 +567,6 @@ loader.innerText = "模型就绪（CPU），请开启相机";
       return { x, y };
     }
 
-    /* =========================
-       Sticker interactions
-       - tap: select
-       - press+drag: move (when NOT editing)
-       - drag: liquify (when editing)
-    ========================= */
     function attachStickerInteractions(st){
       const el = st.el;
 
@@ -653,7 +574,7 @@ loader.innerText = "模型就绪（CPU），请开启相机";
       let startX=0, startY=0;
       let baseLeft=0, baseTop=0;
       let moved = false;
-      const DRAG_THRESHOLD = 6; // px
+      const DRAG_THRESHOLD = 6;
       let lastLocal = null;
 
       el.addEventListener("pointerdown", (e)=>{
@@ -670,10 +591,8 @@ loader.innerText = "模型就绪（CPU），请开启相机";
         baseLeft = st.x;
         baseTop  = st.y;
 
-        // tap/drag都会先选中
         selectSticker(st);
 
-        // deep edit snapshot only if editing
         if (editbar.style.display === "flex" && editMode === "stretch") {
           lastLocal = getLocalPointOnCanvas(el, e.clientX, e.clientY);
 
@@ -695,7 +614,6 @@ loader.innerText = "模型就绪（CPU），请开启相机";
         const dy = e.clientY - startY;
         const dist = Math.hypot(dx, dy);
 
-        // NOT editing: drag to move
         if (editbar.style.display !== "flex") {
           if (dist > DRAG_THRESHOLD) moved = true;
           if (!moved) return;
@@ -708,7 +626,6 @@ loader.innerText = "模型就绪（CPU），请开启相机";
           return;
         }
 
-        // Editing: drag to liquify
         if (editMode !== "stretch") return;
         const local = getLocalPointOnCanvas(el, e.clientX, e.clientY);
         if (!local) return;
@@ -737,9 +654,6 @@ loader.innerText = "模型就绪（CPU），请开启相机";
       el.addEventListener("pointercancel", end);
     }
 
-    /* =========================
-       Smear / Liquify
-    ========================= */
     function applySmear(canvas, cx, cy, radius, vx, vy, strength){
       const ctx = canvas.getContext("2d");
       const w = canvas.width, h = canvas.height;
@@ -789,9 +703,6 @@ loader.innerText = "模型就绪（CPU），请开启相机";
       ctx.putImageData(dst, 0,0);
     }
 
-    /* =========================
-       Two-finger transform (rotate/scale) on selected
-    ========================= */
     stage.addEventListener("touchstart", (e)=>{
       if (!selected) return;
       if (e.touches.length === 2){
@@ -830,22 +741,18 @@ loader.innerText = "模型就绪（CPU），请开启相机";
     stage.addEventListener("touchend", ()=>{ gesture.active = false; });
     stage.addEventListener("touchcancel", ()=>{ gesture.active = false; });
 
-    /* =========================
-       Stage interactions
-       - tap empty: deselect (if not editing)
-       - MP tap: segment
-       - RECT/DRAW: ROI capture
-    ========================= */
+    // ✅ FIX: 做一个“tap 判定”，避免轻微移动造成逻辑混乱
+    let stageTap = { down:false, x:0, y:0, id:null };
+    const TAP_MOVE_THRESHOLD = 10;
+
     stage.addEventListener("pointerdown", (e)=>{
       if (e.target.closest(".topbar") || e.target.closest("#editbar") || e.target.closest("#libPanel")) return;
-
       if (!video.srcObject) { showHint("先点 Start Camera", 900); return; }
 
-// 只要事件发生在 stage 区域就允许
-if (!stage.contains(e.target)) return;
+      // 如果点到贴纸，让贴纸自己的 pointerdown 处理
+      if (e.target.closest(".sticker")) return;
 
-
-      // If editing: tap empty exits editing (keep selected)
+      // 如果在深度编辑中，点空白退出深度编辑
       if (editbar.style.display === "flex") {
         editbar.style.display = "none";
         paintUndoStack = [];
@@ -853,34 +760,30 @@ if (!stage.contains(e.target)) return;
         return;
       }
 
-      // if selected and tap empty -> deselect
-      if (selected){
-        deselect();
-        showHint("取消选中", 700);
-        return;
+      stageTap.down = true;
+      stageTap.x = e.clientX;
+      stageTap.y = e.clientY;
+      stageTap.id = e.pointerId;
+
+      // RECT / DRAW 继续走原来的按住拖拽逻辑
+      if (captureMode !== "mp"){
+        e.preventDefault();
+        pointerDown = true;
+
+        const p = localPointFromClient(e.clientX, e.clientY);
+        startPt = p;
+
+        roi = { x:p.x, y:p.y, w:1, h:1 };
+        path = [ {x:p.x, y:p.y} ];
+
+        showROI(roi);
+        if (captureMode === "draw") drawPathPreview(path);
       }
 
-      // MP mode: tap to segment
-      if (captureMode === "mp"){
-        handleMediaPipeTap(e);
-        return;
-      }
-
-      // RECT / DRAW: begin ROI
-      e.preventDefault();
-      pointerDown = true;
-
-      const p = localPointFromClient(e.clientX, e.clientY);
-      startPt = p;
-
-      roi = { x:p.x, y:p.y, w:1, h:1 };
-      path = [ {x:p.x, y:p.y} ];
-
-      showROI(roi);
-      if (captureMode === "draw") drawPathPreview(path);
     }, { passive:false });
 
     stage.addEventListener("pointermove", (e)=>{
+      // RECT/DRAW 拖拽
       if (!pointerDown || !startPt) return;
       e.preventDefault();
 
@@ -912,6 +815,23 @@ if (!stage.contains(e.target)) return;
     }, { passive:false });
 
     stage.addEventListener("pointerup", async (e)=>{
+      // ✅ FIX: MP 模式在 pointerup 做 tap 判定，然后触发分割（不会被“取消选中”抢走）
+      if (captureMode === "mp"){
+        if (stageTap.down && e.pointerId === stageTap.id){
+          const dx = e.clientX - stageTap.x;
+          const dy = e.clientY - stageTap.y;
+          const moved = Math.hypot(dx,dy) > TAP_MOVE_THRESHOLD;
+          stageTap.down = false;
+
+          if (!moved){
+            // MP 点一下就分割；不再自动 deselect
+            await handleMediaPipeTap(e);
+          }
+        }
+        return;
+      }
+
+      // RECT/DRAW 原逻辑
       if (!pointerDown) return;
       e.preventDefault();
       pointerDown = false;
@@ -935,15 +855,13 @@ if (!stage.contains(e.target)) return;
     }, { passive:false });
 
     stage.addEventListener("pointercancel", ()=>{
+      stageTap.down = false;
       pointerDown = false;
       hideROI();
       roi = null; path = []; startPt = null;
       clearPathPreview();
     });
 
-    /* =========================
-       Create sticker from ROI (RECT/DRAW)
-    ========================= */
     async function createStickerFromROI(rect, pathPoints){
       const crop = cssRectToVideoCrop(rect);
       if (!crop) return;
@@ -965,29 +883,18 @@ if (!stage.contains(e.target)) return;
         ctx.closePath();
         ctx.clip();
 
-        ctx.drawImage(
-          video,
-          crop.sx, crop.sy, crop.sw, crop.sh,
-          0, 0, rect.w * dpr, rect.h * dpr
-        );
+        ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, rect.w * dpr, rect.h * dpr);
         ctx.restore();
       } else {
-        ctx.drawImage(
-          video,
-          crop.sx, crop.sy, crop.sw, crop.sh,
-          0, 0, src.width, src.height
-        );
+        ctx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, src.width, src.height);
       }
 
       addStickerFromCanvas(src, rect);
       showHint("截取完成：按住拖动移动；双指旋转缩放；Edit 深度编辑", 1200);
     }
 
-    /* =========================
-       MediaPipe tap -> segment -> trimmed sticker
-    ========================= */
     async function handleMediaPipeTap(e){
-      e.preventDefault?.(); 
+      e.preventDefault?.();
       if (!interactiveSegmenter) { showHint("模型未就绪", 800); return; }
       if (isProcessing) return;
 
@@ -996,7 +903,7 @@ if (!stage.contains(e.target)) return;
       if (clientX == null || clientY == null) return;
 
       console.log("tap event", e.type, "client", clientX, clientY);
-  console.log("video ready", video.videoWidth, video.videoHeight, "seg", !!interactiveSegmenter);
+      console.log("video ready", video.videoWidth, video.videoHeight, "seg", !!interactiveSegmenter);
 
       if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return;
 
@@ -1006,6 +913,7 @@ if (!stage.contains(e.target)) return;
         const relativeY = (clientY - rect.top) / rect.height;
 
         console.log("relative", relativeX, relativeY);
+
         const result = await new Promise(resolve => {
           interactiveSegmenter.segment(
             video,
@@ -1045,7 +953,6 @@ if (!stage.contains(e.target)) return;
           return;
         }
 
-        // map video pixels -> stage css px (object-fit cover)
         const sw = stage.clientWidth, sh = stage.clientHeight;
         const videoAspect = w / h;
         const stageAspect = sw / sh;
@@ -1080,7 +987,7 @@ if (!stage.contains(e.target)) return;
         };
 
         addStickerFromCanvas(trimmed, cssRect);
-        showHint("MP 抠图完成：按住拖动移动；双指旋转缩放；Edit 深度编辑", 1300);
+        showHint("MP 抠图完成：点画面继续抠；贴纸可拖动/Save/Edit", 1300);
       } catch(err){
         console.error(err);
         showHint("分割出错（可能网络/模型/权限）", 1200);
@@ -1125,9 +1032,6 @@ if (!stage.contains(e.target)) return;
       return out;
     }
 
-    /* =========================
-       Library
-    ========================= */
     function loadLibrary(){
       try{ return JSON.parse(localStorage.getItem(LIB_KEY) || "[]"); }
       catch{ return []; }
@@ -1180,9 +1084,6 @@ if (!stage.contains(e.target)) return;
       return st.el.toDataURL("image/png");
     }
 
-    /* =========================
-       Topbar buttons
-    ========================= */
     document.getElementById("btnStart").addEventListener("click", startCamera);
 
     document.getElementById("btnFlip").addEventListener("click", async ()=>{
@@ -1193,14 +1094,8 @@ if (!stage.contains(e.target)) return;
 
     btnSave.addEventListener("click", ()=>{
       if (!selected) return;
-
       const items = loadLibrary();
-      items.unshift({
-        dataURL: stickerToDataURL(selected),
-        w: selected.w,
-        h: selected.h,
-        t: Date.now()
-      });
+      items.unshift({ dataURL: stickerToDataURL(selected), w: selected.w, h: selected.h, t: Date.now() });
       saveLibrary(items.slice(0, 60));
       refreshLibraryUI();
       showHint("已保存到 Library", 900);
@@ -1259,14 +1154,7 @@ if (!stage.contains(e.target)) return;
       showHint("已清空", 800);
     });
 
-    /* =========================
-       Save/Edit initial disabled
-    ========================= */
     setActionEnabled(false);
-
-    /* =========================
-       Defaults + init
-    ========================= */
     setCaptureMode("mp");
     resizeDrawLayer();
     refreshLibraryUI();
