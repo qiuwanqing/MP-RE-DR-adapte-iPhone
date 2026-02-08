@@ -452,6 +452,11 @@
         video.srcObject = stream;
         await video.play();
 
+        await new Promise(res=>{
+        if (video.videoWidth) return res();
+        video.addEventListener("loadedmetadata", res, { once:true });
+        });
+
         video.style.transform = (facingMode === "user") ? "scaleX(-1)" : "none";
         applyVideoFilter();
 
@@ -537,6 +542,24 @@
     if (st.blurPx > 0) parts.push(`blur(${st.blurPx}px)`);
     st.el.style.filter = parts.length ? parts.join(" ") : "none";
     }
+
+    // iOS 稳定：先把 video 当前帧画到 canvas，再送进 MediaPipe
+    const mpFrameCanvas = document.createElement("canvas");
+    const mpFrameCtx = mpFrameCanvas.getContext("2d", { willReadFrequently: true });
+
+    function getVideoFrameCanvas(){
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    if (!vw || !vh) return null;
+
+    if (mpFrameCanvas.width !== vw || mpFrameCanvas.height !== vh){
+        mpFrameCanvas.width = vw;
+        mpFrameCanvas.height = vh;
+    }
+    mpFrameCtx.drawImage(video, 0, 0, vw, vh);
+    return mpFrameCanvas;
+    }
+
 
     function showROI(rect){
       roiBox.style.display = "block";
@@ -1059,11 +1082,19 @@ function applyNoise(amount){
     console.log("relative", relativeX, relativeY);
 
     const result = await new Promise(resolve => {
-      interactiveSegmenter.segment(
-        video,
-        { keypoint: { x: relativeX, y: relativeY } },
-        (r)=>resolve(r)
-      );
+    const frameCanvas = getVideoFrameCanvas();
+    if (!frameCanvas){
+    showHint("视频未就绪（等相机画面出现再点）", 900);
+    isProcessing = false;
+    return;
+    }
+
+    interactiveSegmenter.segment(
+    frameCanvas,
+    { keypoint: { x: relativeX, y: relativeY } },
+    (r)=>resolve(r)
+    );
+
     });
 
     if (!result?.categoryMask){
