@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-  <title>MP+RE+DR-3/iphone</title>
+  <title>MP+RE+DR-3/mac</title>
 
   <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
   <script>var vConsole = new VConsole();</script>
@@ -532,6 +532,12 @@
       st.el.style.transform = `translateZ(0) rotate(${st.rot}rad) scale(${st.scale})`;
     }
 
+    function applyStickerCssFilter(st){
+    const parts = [];
+    if (st.blurPx > 0) parts.push(`blur(${st.blurPx}px)`);
+    st.el.style.filter = parts.length ? parts.join(" ") : "none";
+    }
+
     function showROI(rect){
       roiBox.style.display = "block";
       roiBox.style.left = rect.x + "px";
@@ -603,9 +609,13 @@
 
       stage.appendChild(stCanvas);
 
-      const st = { el: stCanvas, x: cssRect.x, y: cssRect.y, w: cssRect.w, h: cssRect.h, scale: 1, rot: 0 };
+      const st = { el: stCanvas, x: cssRect.x, y: cssRect.y, w: cssRect.w, h: cssRect.h, scale: 1, rot: 0,
+      blurPx: 0 
+      };
       stickers.push(st);
       objUndoStack.push(st);
+
+      applyStickerCssFilter(st);   // ⭐⭐⭐ 关键
 
       attachStickerInteractions(st);
       selectSticker(st);
@@ -1301,11 +1311,15 @@ function applyNoise(amount){
 
     document.getElementById("btnFxBlur").addEventListener("click", ()=>{
     if (!selected) return;
-    // 用你现成的 radius 滑块当作 blur 半径（更直觉）
-    const px = Math.round(parseInt(radiusEl.value, 10) / 18); // 10~220 -> 大概 1~12px
-    applyGaussianBlur(clamp(px, 1, 16));
-    showHint(`Blur ${clamp(px,1,16)}px`, 650);
+
+    // 用 radius 滑块控制 CSS blur（iOS 稳定）
+    const px = Math.round(parseInt(radiusEl.value, 10) / 12); // 稍微更明显
+    selected.blurPx = clamp(px, 0, 16);
+
+    applyStickerCssFilter(selected);
+    showHint(`Blur ${selected.blurPx}px`, 650);
     });
+
 
     document.getElementById("btnFxBW").addEventListener("click", ()=>{
     if (!selected) return;
