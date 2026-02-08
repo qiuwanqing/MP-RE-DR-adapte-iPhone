@@ -33,6 +33,26 @@
       -webkit-tap-highlight-color: transparent;
       cursor:pointer;
     }
+
+    /* 让 editbar 里的按钮视觉和 topbar 一致 */
+    #editbar button{
+    padding:8px 10px;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.18);
+    background: rgba(255,255,255,.08);
+    color:#fff;
+    backdrop-filter: blur(10px);
+    -webkit-tap-highlight-color: transparent;
+    cursor:pointer;
+    }
+    #editbar button:active{ transform: translateY(0.5px); }
+    #editbar button.primary{ border-color: rgba(160,210,255,.60); }
+    #editbar button.danger{ border-color: rgba(255,120,120,.55); }
+    #editbar button.active{
+    border-color: rgba(255,255,255,.75);
+    background: rgba(255,255,255,.16);
+    }
+
     .topbar button.active{
       border-color: rgba(255,255,255,.75);
       background: rgba(255,255,255,.16);
@@ -119,10 +139,10 @@
       position:absolute;
       left:0; top:0;
       z-index: 10;
-      border-radius:0px;
-      border:1px solid rgba(255,255,255,0);
-      box-shadow: 0 10px 30px rgba(0,0,0,.35);
-      filter: drop-shadow(0 0 10px rgba(255,255,255,0.45));
+      border-radius:0px;/* ✅ 冷冻窗*/
+      border:1px solid rgba(255,255,255,0);  /* ✅ 冷冻窗*/
+      box-shadow: 0 10px 30px rgba(0,0,0,0);/* ✅ 冷冻窗*/
+      filter: drop-shadow(0 0 10px rgba(255,255,255,0));/* ✅ 冷冻窗*/
       transform-origin: center;
       touch-action:none;
       cursor: grab;
@@ -220,6 +240,11 @@
     <button id="btnModeRect">RECT</button>
     <button id="btnModeDraw">DRAW</button>
 
+    <button id="btnVidBW">V-B&W</button>
+    <button id="btnVidBlur">V-Blur</button>
+    <input id="vidBlur" type="range" min="0" max="18" value="0" style="width:110px;">
+
+
     <button id="btnSave" class="disabled">Save</button>
     <button id="btnEdit" class="primary disabled">Edit</button>
     <button id="btnLibrary">Library</button>
@@ -260,8 +285,11 @@
         <input id="strength" type="range" min="-100" max="100" value="85">
       </span>
 
-      <button id="btnUndoPaint">撤销</button>
-      <button id="btnDone" class="danger">完成</button>
+    <button id="btnUndoPaint">撤销</button>
+    <button id="btnFxBlur" class="primary">Blur</button>
+    <button id="btnFxBW" class="primary">B&W</button>
+    <button id="btnFxNoise" class="primary">Noise</button>
+    <button id="btnDone" class="danger">完成</button>
     </div>
   </div>
 
@@ -316,6 +344,39 @@
 
     let interactiveSegmenter = null;
     let isProcessing = false;
+
+    // ===== 全局视频滤镜状态 =====
+    let videoFx = {
+    bw: false,
+    blur: false,
+    blurPx: 0
+    };
+
+    // ===== 全局视频滤镜：真正的全局函数（按钮才能调用到）=====
+    function applyVideoFilter(){
+    const parts = [];
+
+    // 黑白
+    if (videoFx.bw) parts.push("grayscale(1)");
+
+    // 模糊
+    if (videoFx.blur && videoFx.blurPx > 0) {
+        parts.push(`blur(${videoFx.blurPx}px)`);
+    }
+
+    // 应用到 video 上（CSS filter）
+    video.style.filter = parts.length ? parts.join(" ") : "none";
+
+    // 按钮状态同步（让按钮亮/暗）
+    const bwBtn = document.getElementById("btnVidBW");
+    const blurBtn = document.getElementById("btnVidBlur");
+    bwBtn?.classList.toggle("active", videoFx.bw);
+    blurBtn?.classList.toggle("active", videoFx.blur);
+
+    // 滑块同步
+    const slider = document.getElementById("vidBlur");
+    if (slider) slider.value = String(videoFx.blurPx || 0);
+    }
 
     let gesture = {
       active:false,
@@ -392,6 +453,7 @@
         await video.play();
 
         video.style.transform = (facingMode === "user") ? "scaleX(-1)" : "none";
+        applyVideoFilter();
 
         loader.style.display = "none";
         resizeDrawLayer();
@@ -702,6 +764,80 @@
       }
       ctx.putImageData(dst, 0,0);
     }
+    function pushUndoForSelected(){
+  if (!selected) return false;
+  const ctx = selected.el.getContext("2d");
+  const snap = ctx.getImageData(0,0, selected.el.width, selected.el.height);
+  paintUndoStack.push(snap);
+  if (paintUndoStack.length > 14) paintUndoStack.shift();
+  return true;
+}
+
+// 快速模糊：用 ctx.filter（性能好，iOS 也支持）
+function applyGaussianBlur(px){
+  if (!selected) return;
+  if (!pushUndoForSelected()) return;
+
+  const c = selected.el;
+  const ctx = c.getContext("2d");
+  const tmp = document.createElement("canvas");
+  tmp.width = c.width;
+  tmp.height = c.height;
+
+  const tctx = tmp.getContext("2d");
+  tctx.clearRect(0,0,tmp.width,tmp.height);
+  tctx.drawImage(c, 0,0);
+
+  ctx.save();
+  ctx.clearRect(0,0,c.width,c.height);
+  ctx.filter = `blur(${px}px)`;
+  ctx.drawImage(tmp, 0,0);
+  ctx.restore();
+}
+
+function applyBlackWhite(){
+  if (!selected) return;
+  if (!pushUndoForSelected()) return;
+
+  const c = selected.el;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  const img = ctx.getImageData(0,0,c.width,c.height);
+  const d = img.data;
+
+  for (let i=0; i<d.length; i+=4){
+    const a = d[i+3];
+    if (a === 0) continue;
+    const r = d[i], g = d[i+1], b = d[i+2];
+    // 更接近人眼的灰度
+    const y = (0.2126*r + 0.7152*g + 0.0722*b) | 0;
+    d[i] = d[i+1] = d[i+2] = y;
+  }
+  ctx.putImageData(img, 0,0);
+}
+
+// amount: 0~1，建议 0.1~0.35
+function applyNoise(amount){
+  if (!selected) return;
+  if (!pushUndoForSelected()) return;
+
+  const c = selected.el;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  const img = ctx.getImageData(0,0,c.width,c.height);
+  const d = img.data;
+
+  const amp = Math.max(0, Math.min(1, amount)) * 255;
+
+  for (let i=0; i<d.length; i+=4){
+    const a = d[i+3];
+    if (a === 0) continue;
+    const n = (Math.random()*2 - 1) * amp;
+    d[i]   = clamp(d[i]   + n, 0, 255);
+    d[i+1] = clamp(d[i+1] + n, 0, 255);
+    d[i+2] = clamp(d[i+2] + n, 0, 255);
+  }
+  ctx.putImageData(img, 0,0);
+}
+
 
     stage.addEventListener("touchstart", (e)=>{
       if (!selected) return;
@@ -1123,6 +1259,30 @@
       showHint(facingMode === "user" ? "前置（镜像）" : "后置", 700);
     });
 
+    // ===== 全局视频滤镜：事件绑定 =====
+    const btnVidBW   = document.getElementById("btnVidBW");
+    const btnVidBlur = document.getElementById("btnVidBlur");
+    const vidBlurEl  = document.getElementById("vidBlur");
+
+    btnVidBW.addEventListener("click", ()=>{
+    videoFx.bw = !videoFx.bw;
+    applyVideoFilter();
+    showHint(videoFx.bw ? "Video B&W ON" : "Video B&W OFF", 700);
+    });
+
+    btnVidBlur.addEventListener("click", ()=>{
+    videoFx.blur = !videoFx.blur;
+    if (videoFx.blur && videoFx.blurPx === 0) videoFx.blurPx = 6;
+    applyVideoFilter();
+    showHint(videoFx.blur ? `Video Blur ${videoFx.blurPx}px` : "Video Blur OFF", 700);
+    });
+
+    vidBlurEl.addEventListener("input", ()=>{
+    videoFx.blurPx = parseInt(vidBlurEl.value, 10) || 0;
+    videoFx.blur = videoFx.blurPx > 0;
+    applyVideoFilter();
+    });
+
     btnSave.addEventListener("click", ()=>{
       if (!selected) return;
       const items = loadLibrary();
@@ -1137,6 +1297,28 @@
       editbar.style.display = "flex";
       paintUndoStack = [];
       showHint("进入深度编辑：拖动=拉伸；双指=旋转缩放；Done 退出", 1300);
+    });
+
+    document.getElementById("btnFxBlur").addEventListener("click", ()=>{
+    if (!selected) return;
+    // 用你现成的 radius 滑块当作 blur 半径（更直觉）
+    const px = Math.round(parseInt(radiusEl.value, 10) / 18); // 10~220 -> 大概 1~12px
+    applyGaussianBlur(clamp(px, 1, 16));
+    showHint(`Blur ${clamp(px,1,16)}px`, 650);
+    });
+
+    document.getElementById("btnFxBW").addEventListener("click", ()=>{
+    if (!selected) return;
+    applyBlackWhite();
+    showHint("B&W", 650);
+    });
+
+    document.getElementById("btnFxNoise").addEventListener("click", ()=>{
+    if (!selected) return;
+    // 用 strength 滑块当噪点强度（0~1）
+    const amt = Math.abs(parseInt(strengthEl.value, 10)) / 100; // 0~1
+    applyNoise(clamp(amt * 0.35, 0.05, 0.45));
+    showHint("Noise", 650);
     });
 
     document.getElementById("btnUndoPaint").addEventListener("click", ()=>{
