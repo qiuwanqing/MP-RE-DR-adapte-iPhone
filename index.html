@@ -150,9 +150,9 @@
     }
     .sticker:active{ cursor:grabbing; }
     .sticker.selected{
-      border-color: rgba(255,255,255,.9);
+      border-color: rgba(255,255,255,0);
       box-shadow: 0 10px 30px rgba(0,0,0,.55);
-      outline: 2px solid rgba(255,255,255,0.95);
+      outline: 0px solid rgba(255,255,255,0.95);
       outline-offset: 3px;
     }
     @keyframes popIn{
@@ -273,23 +273,23 @@
 
   <div id="editbar">
     <div class="seg">
-      <span class="pill">深度编辑：拖动=拉伸</span>
+      <span class="pill">distort</span>
 
       <span class="pill">
-        半径
+        radius
         <input id="radius" type="range" min="10" max="220" value="120">
       </span>
 
       <span class="pill">
-        强度
+        strength
         <input id="strength" type="range" min="-100" max="100" value="85">
       </span>
 
-    <button id="btnUndoPaint">撤销</button>
+    <button id="btnUndoPaint">undo</button>
     <button id="btnFxBlur" class="primary">Blur</button>
     <button id="btnFxBW" class="primary">B&W</button>
     <button id="btnFxNoise" class="primary">Noise</button>
-    <button id="btnDone" class="danger">完成</button>
+    <button id="btnDone" class="danger">done</button>
     </div>
   </div>
 
@@ -525,7 +525,7 @@
       st.el.classList.add("selected");
       paintUndoStack = [];
       setActionEnabled(true);
-      showHint("已选中：拖动移动 / Save / 双指旋转缩放 / Edit 深度编辑", 1200);
+      showHint("selected", 1200);
     }
 
     function applyTransform(st){
@@ -890,7 +890,7 @@ function applyNoise(amount){
       if (editbar.style.display === "flex") {
         editbar.style.display = "none";
         paintUndoStack = [];
-        showHint("退出深度编辑", 800);
+        showHint("exit Edit", 800);
         return;
       }
 
@@ -1020,29 +1020,29 @@ function applyNoise(amount){
       }
 
       addStickerFromCanvas(src, rect);
-      showHint("截取完成：按住拖动移动；双指旋转缩放；Edit 深度编辑", 1200);
+      showHint("done", 1200);
     }
 
     // =========================
     // ✅ MP：永远保留你点到的物体（自动判断需不需要反转）
     // =========================
-   async function handleMediaPipeTap(e){
-  e.preventDefault?.();
-  if (!interactiveSegmenter) { showHint("模型未就绪", 800); return; }
-  if (isProcessing) return;
+    async function handleMediaPipeTap(e){
+    e.preventDefault?.();
+    if (!interactiveSegmenter) { showHint("模型未就绪", 800); return; }
+    if (isProcessing) return;
 
-  const vRect = video.getBoundingClientRect();
-  const { cx: clientX, cy: clientY } = getClientXY(e);
-  if (clientX == null || clientY == null) return;
+    const vRect = video.getBoundingClientRect();
+    const { cx: clientX, cy: clientY } = getClientXY(e);
+    if (clientX == null || clientY == null) return;
 
-  console.log("tap event", e.type, "client", clientX, clientY);
-  console.log("video ready", video.videoWidth, video.videoHeight, "seg", !!interactiveSegmenter);
+    console.log("tap event", e.type, "client", clientX, clientY);
+    console.log("video ready", video.videoWidth, video.videoHeight, "seg", !!interactiveSegmenter);
 
-  // 点击必须落在视频可视区域内
-  if (clientX < vRect.left || clientX > vRect.right || clientY < vRect.top || clientY > vRect.bottom) return;
+    // 点击必须落在视频可视区域内
+    if (clientX < vRect.left || clientX > vRect.right || clientY < vRect.top || clientY > vRect.bottom) return;
 
-  isProcessing = true;
-  try{
+    isProcessing = true;
+    try{
     // 点击点在 video DOM（object-fit:cover 的可视区域）内的归一化坐标
     const relativeX = (clientX - vRect.left) / vRect.width;
     const relativeY = (clientY - vRect.top) / vRect.height;
@@ -1111,7 +1111,7 @@ function applyNoise(amount){
     // trim 到非透明边界，得到“物体本体”canvas
     const trimmed = trimCanvas(fullCanvas);
     if (!trimmed){
-      showHint("抠图为空（换个点试试）", 900);
+      showHint("抠图为空", 900);
       isProcessing = false;
       return;
     }
@@ -1152,7 +1152,7 @@ function applyNoise(amount){
     };
 
     addStickerFromCanvas(trimmed, cssRect);
-    showHint("MP 抠图完成：点画面继续抠；贴纸可拖动/Save/Edit", 1300);
+    showHint("done", 1300);
 
   } catch(err){
     console.error(err);
@@ -1244,7 +1244,7 @@ function applyNoise(amount){
       ctx.drawImage(img, 0,0, src.width, src.height);
 
       addStickerFromCanvas(src, { x, y, w: targetW, h: targetH });
-      showHint("已从 Library 放回舞台", 900);
+      showHint("已放回", 900);
     }
 
     function stickerToDataURL(st){
@@ -1289,14 +1289,14 @@ function applyNoise(amount){
       items.unshift({ dataURL: stickerToDataURL(selected), w: selected.w, h: selected.h, t: Date.now() });
       saveLibrary(items.slice(0, 60));
       refreshLibraryUI();
-      showHint("已保存到 Library", 900);
+      showHint("save to Library", 900);
     });
 
     btnEdit.addEventListener("click", ()=>{
       if (!selected) return;
       editbar.style.display = "flex";
       paintUndoStack = [];
-      showHint("进入深度编辑：拖动=拉伸；双指=旋转缩放；Done 退出", 1300);
+      showHint("edit：拖动=拉伸；双指=旋转缩放；Done 退出", 1300);
     });
 
     document.getElementById("btnFxBlur").addEventListener("click", ()=>{
@@ -1326,13 +1326,13 @@ function applyNoise(amount){
       const prev = paintUndoStack.pop();
       const ctx = selected.el.getContext("2d");
       ctx.putImageData(prev, 0, 0);
-      showHint("撤销", 650);
+      showHint("undo", 650);
     });
 
     document.getElementById("btnDone").addEventListener("click", ()=>{
       editbar.style.display = "none";
       paintUndoStack = [];
-      showHint("退出深度编辑", 800);
+      showHint("exit Edit", 800);
     });
 
     document.getElementById("btnLibrary").addEventListener("click", ()=>{
@@ -1356,7 +1356,7 @@ function applyNoise(amount){
       if (selected === last) deselect();
       last.el.remove();
       stickers = stickers.filter(s => s !== last);
-      showHint("撤销新增（删除最后一个）", 850);
+      showHint("undo", 850);
     });
 
     document.getElementById("btnClearAll").addEventListener("click", ()=>{
